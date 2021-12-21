@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <babeltrace2/babeltrace.h>
+#include <json-c/json.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -22,10 +23,10 @@ static void CheckBtError(int32_t status) {
  * Shared data between our relay sink component and the
  * bt_graph_run_once() call site.
  */
-struct relay_data {
+typedef struct relay_data {
   bt_message_array_const msgs;
   uint64_t msg_count;
-};
+} relay_data;
 
 /*
  * Consumer method of our relay sink component class.
@@ -46,12 +47,15 @@ static bt_graph_simple_sink_component_consume_func_status relay_consume(
       bt_message_iterator_next(msg_iter, &relay_data->msgs, &relay_data->msg_count);
   switch (msg_iter_next_status) {
     case BT_MESSAGE_ITERATOR_NEXT_STATUS_END:
+
       status = BT_GRAPH_SIMPLE_SINK_COMPONENT_CONSUME_FUNC_STATUS_END;
       break;
     case BT_GRAPH_SIMPLE_SINK_COMPONENT_CONSUME_FUNC_STATUS_MEMORY_ERROR:
+
       status = BT_GRAPH_SIMPLE_SINK_COMPONENT_CONSUME_FUNC_STATUS_MEMORY_ERROR;
       break;
     case BT_GRAPH_SIMPLE_SINK_COMPONENT_CONSUME_FUNC_STATUS_ERROR:
+
       status = BT_GRAPH_SIMPLE_SINK_COMPONENT_CONSUME_FUNC_STATUS_ERROR;
       break;
     default:
@@ -305,14 +309,13 @@ end:
  *
  * See <https://babeltrace.org/docs/v2.0/libbabeltrace2/group__api-msg.html>.
  */
-static void handle_msg(const bt_message* const msg) {
+static char const* handle_msg(const bt_message* const msg) {
   if (bt_message_get_type(msg) != BT_MESSAGE_TYPE_EVENT) {
-    return;
+    return NULL;
   }
 
   const bt_event* event = bt_message_event_borrow_event_const(msg);
   const bt_event_class* eventClass = bt_event_borrow_class_const(event);
-  printf("[%s] ", bt_event_class_get_name(bt_event_borrow_class_const(event)));
 
   const bt_field* payload = bt_event_borrow_payload_field_const(event);
   const bt_field_class* fieldClass = bt_field_borrow_class_const(payload);
@@ -332,9 +335,15 @@ static void handle_msg(const bt_message* const msg) {
     if (fieldType == BT_FIELD_CLASS_TYPE_STRING) {
       const char* val = bt_field_string_get_value(structField);
       uint64_t len = bt_field_string_get_length(structField);
-      printf("%s: %s\n", structFieldName, val);
+
+      // TODO: I suppose the message is not longer than 100 chars. Better options?
+      char* output_message = (char*)malloc(100 * sizeof(char));
+      sprintf(output_message, "[%s] %s: %s\n",
+              bt_event_class_get_name(bt_event_borrow_class_const(event)), structFieldName, val);
+      return output_message;
     }
   }
+  return NULL;
 }
 
 /*
@@ -343,66 +352,35 @@ static void handle_msg(const bt_message* const msg) {
  *
  * See <https://babeltrace.org/docs/v2.0/libbabeltrace2/group__api-graph.html#api-graph-lc-run>.
  */
-static int run_graph(bt_graph* const graph, struct relay_data* const relay_data) {
-  bt_graph_run_once_status status;
+static const char** run_graph_once(bt_graph* const graph, struct relay_data* const relay_data) {
+  /*
+   * bt_graph_run_once() calls the consuming method of
+   * our relay sink component (relay_consume()).
+   *
+   * relay_consume() consumes a batch of messages from the
+   * `flt.utils.muxer` component and stores them in
+   * `*relay_data`.
+   */
+  bt_graph_run_once_status status = bt_graph_run_once(graph);
+  assert(status != BT_GRAPH_RUN_ONCE_STATUS_AGAIN);
+  if (status != BT_GRAPH_RUN_ONCE_STATUS_OK) {
+    return NULL;
+  }
 
-  while (true) {
-    uint64_t i;
+  const char** output_messages = (const char**)malloc((relay_data->msg_count) * sizeof(char*));
+
+  /* Handle each consumed message */
+  for (uint64_t i = 0; i < relay_data->msg_count; i++) {
+    const bt_message* const msg = relay_data->msgs[i];
+
+    output_messages[i] = handle_msg(msg);
 
     /*
-     * bt_graph_run_once() calls the consuming method of
-     * our relay sink component (relay_consume()).
-     *
-     * relay_consume() consumes a batch of messages from the
-     * `flt.utils.muxer` component and stores them in
-     * `*relay_data`.
+     * The message reference `msg` is ours: release
+     * it now.
      */
-    status = bt_graph_run_once(graph);
-    assert(status != BT_GRAPH_RUN_ONCE_STATUS_AGAIN);
-    if (status != BT_GRAPH_RUN_ONCE_STATUS_OK) {
-      break;
-    }
-
-    /* Handle each consumed message */
-    for (i = 0; i < relay_data->msg_count; i++) {
-      const bt_message* const msg = relay_data->msgs[i];
-
-      handle_msg(msg);
-
-      /*
-       * The message reference `msg` is ours: release
-       * it now.
-       */
-      bt_message_put_ref(msg);
-    }
+    bt_message_put_ref(msg);
   }
 
-  return status == BT_GRAPH_RUN_ONCE_STATUS_END ? 0 : -1;
-}
-
-/*
- * Reads the CTF trace located in the directory `argv[1]`, printing one
- * event name per line to the standard output.
- */
-int listenToLttngLive(const char* const url) {
-  int ret = EXIT_SUCCESS;
-  struct relay_data relay_data = {0};
-  bt_graph* graph;
-
-  /* Create the trace processing graph */
-  graph = create_graph(url, &relay_data);
-  if (!graph) {
-    puts("No graph can be created. Exiting...");
-    ret = EXIT_FAILURE;
-    goto end;
-  }
-
-  /* Run the graph, printing one event name per line */
-  if (run_graph(graph, &relay_data)) {
-    ret = EXIT_FAILURE;
-  }
-
-end:
-  bt_graph_put_ref(graph);
-  return ret;
+  return output_messages;
 }
