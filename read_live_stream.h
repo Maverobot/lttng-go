@@ -8,6 +8,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "decode_event.h"
+
 static void CheckBtError(int32_t status) {
   switch (status) {
     case BT_GRAPH_RUN_STATUS_OK:
@@ -316,34 +318,21 @@ static char const* handle_msg(const bt_message* const msg) {
 
   const bt_event* event = bt_message_event_borrow_event_const(msg);
   const bt_event_class* eventClass = bt_event_borrow_class_const(event);
+  json_object* const jobj = json_object_new_object();
 
-  const bt_field* payload = bt_event_borrow_payload_field_const(event);
-  const bt_field_class* fieldClass = bt_field_borrow_class_const(payload);
-  uint64_t numFields = bt_field_class_structure_get_member_count(fieldClass);
+  AddEventName(jobj, eventClass);
 
-  for (uint64_t i = 0; i < numFields; i++) {
-    const bt_field_class_structure_member* structFieldClass =
-        bt_field_class_structure_borrow_member_by_index_const(fieldClass, i);
+  const bt_clock_snapshot* clock = bt_message_event_borrow_default_clock_snapshot_const(msg);
+  AddTimestamp(jobj, clock);
 
-    const char* structFieldName = bt_field_class_structure_member_get_name(structFieldClass);
-
-    const bt_field* structField = bt_field_structure_borrow_member_field_by_index_const(payload, i);
-
-    bt_field_class_type fieldType = bt_field_get_class_type(structField);
-
-    // TODO: add all other types as well. See lttng-consume/src/LttngJsonReader.cpp
-    if (fieldType == BT_FIELD_CLASS_TYPE_STRING) {
-      const char* val = bt_field_string_get_value(structField);
-      uint64_t len = bt_field_string_get_length(structField);
-
-      // TODO: I suppose the message is not longer than 100 chars. Better options?
-      char* output_message = (char*)malloc(100 * sizeof(char));
-      sprintf(output_message, "[%s] %s: %s\n",
-              bt_event_class_get_name(bt_event_borrow_class_const(event)), structFieldName, val);
-      return output_message;
-    }
-  }
-  return NULL;
+  AddPacketContext(jobj, event);
+  AddEventHeader(jobj, event);
+  AddStreamEventContext(jobj, event);
+  AddEventContext(jobj, event);
+  AddPayload(jobj, event);
+  char const* output_message = json_object_to_json_string_ext(
+      jobj, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY | JSON_C_TO_STRING_NOSLASHESCAPE);
+  return output_message;
 }
 
 /*

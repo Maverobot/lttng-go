@@ -2,7 +2,7 @@ package main
 
 /*
    #cgo pkg-config: babeltrace2
-   #cgo LDFLAGS: -L. -lbabeltrace2
+   #cgo LDFLAGS: -L. -lbabeltrace2 -ljson-c
    #include <read_live_stream.h>
 */
 import "C"
@@ -44,17 +44,11 @@ func main() {
 		if relay_data.msg_count == 0 {
 			continue
 		}
-		var actualMsgCount uint64 = 0
 		for _, cMsg := range slice {
 			goMsg := C.GoString(cMsg)
 			if goMsg != "" {
-				fmt.Printf("message: %v", goMsg)
-				actualMsgCount++
+				fmt.Printf("%v\n", goMsg)
 			}
-		}
-
-		if actualMsgCount > 0 {
-			fmt.Println("")
 		}
 	}
 }
