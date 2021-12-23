@@ -331,7 +331,7 @@ static char const* handle_msg(const bt_message* const msg) {
   AddEventContext(jobj, event);
   AddPayload(jobj, event);
   char const* output_message = json_object_to_json_string_ext(
-      jobj, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_PRETTY | JSON_C_TO_STRING_NOSLASHESCAPE);
+      jobj, JSON_C_TO_STRING_SPACED | JSON_C_TO_STRING_NOSLASHESCAPE);
   return output_message;
 }
 
