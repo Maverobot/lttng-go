@@ -8,22 +8,29 @@ package main
 import "C"
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
-	"strings"
 	"time"
 	"unsafe"
 
+	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/muesli/reflow/wordwrap"
+	"github.com/charmbracelet/lipgloss"
 )
-
-const maxWidth = 80
 
 var (
 	relay_data = C.relay_data{}
 	graph      *C.bt_graph
+
+	appStyle   = lipgloss.NewStyle().Padding(1, 2)
+	titleStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FFFDF5")).
+			Background(lipgloss.Color("#25A065")).
+			Padding(0, 2)
+	paginationStyle = list.DefaultStyles().PaginationStyle.PaddingLeft(4)
+	helpStyle       = list.DefaultStyles().HelpStyle.PaddingLeft(4).PaddingBottom(1)
 )
 
 func main() {
@@ -38,17 +45,29 @@ func main() {
 	}
 
 	// Initialize our program
-	m := model{}
+	const defaultWidth = 20
+	const listHeight = 14
+	l := list.NewModel([]list.Item{}, newLttngDelegate(), defaultWidth, listHeight)
+	l.Title = "lttng-go"
+	l.SetShowStatusBar(false)
+	l.SetFilteringEnabled(true)
+	l.SetShowPagination(true)
+	l.Styles.Title = titleStyle
+	l.Styles.PaginationStyle = paginationStyle
+	l.Styles.HelpStyle = helpStyle
+	m := model{list: l}
 	p := tea.NewProgram(m)
 	if err := p.Start(); err != nil {
 		log.Fatal(err)
 	}
 }
 
+type message map[string]interface{}
+
 type model struct {
-	messages []string
+	list     list.Model
+	messages []list.Item
 	width    int
-	height   int
 }
 
 // Init optionally returns an initial command we should run. In this case we
@@ -61,14 +80,25 @@ func (m model) Init() tea.Cmd {
 // message and send back an updated model accordingly. You can also return
 // a command, which is a function that performs I/O and returns a message.
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
-		m.height = msg.Height
+		topGap, rightGap, bottomGap, leftGap := appStyle.GetPadding()
+		m.list.SetSize(msg.Width-leftGap-rightGap, msg.Height-topGap-bottomGap)
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c", "q", "esc":
+		switch keypress := msg.String(); keypress {
+		case "ctrl+c":
 			return m, tea.Quit
+		case "ctrl+j":
+			m.list.CursorDown()
+		case "ctrl+k":
+			m.list.CursorUp()
+		default:
+			if !m.list.SettingFilter() && (keypress == "q") {
+				return m, tea.Quit
+			}
 		}
 	case tickMsg:
 		var string_array **C.char = C.run_graph_once(graph, &relay_data)
@@ -77,21 +107,44 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if relay_data.msg_count == 0 {
 			return m, tick()
 		}
+		hasValidMsg := false
 		for _, cMsg := range slice {
 			goMsg := C.GoString(cMsg)
 			if goMsg != "" {
-				m.messages = append(m.messages, wordwrap.String(goMsg, min(m.width, maxWidth)))
+				hasValidMsg = true
+				var data message
+				err := json.Unmarshal([]byte(goMsg), &data)
+				if err != nil {
+					// TODO: log the warning
+					panic(err)
+				}
+
+				payload, _ := json.Marshal(data["payload"])
+				m.messages = append(m.messages, item{
+					title:       data["name"].(string),
+					description: string(payload),
+				})
 			}
 		}
-		return m, tick()
+		if hasValidMsg {
+			m.list.SetItems(m.messages)
+			m.list.Paginator.Page = m.list.Paginator.TotalPages - 1
+			m.list.Select(len(m.list.Items()) - 1)
+		}
+		cmds = append(cmds, tick())
+
 	}
-	return m, nil
+	var cmd tea.Cmd
+	m.list, cmd = m.list.Update(msg)
+	cmds = append(cmds, cmd)
+
+	return m, tea.Batch(cmds...)
 }
 
 // Views return a string based on data in the model. That string which will be
 // rendered to the terminal.
 func (m model) View() string {
-	return strings.Join(m.messages[:], "\n\n")
+	return appStyle.Render(m.list.View())
 }
 
 // Messages are events that we respond to in our Update function. This
