@@ -8,7 +8,6 @@ package main
 import "C"
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"time"
@@ -34,13 +33,26 @@ var (
 )
 
 func main() {
+	/* Set up logger file*/
+	path := os.Getenv("LTTNG_GO_LOG")
+	if path == "" {
+		path = "/tmp/lttng-go.log"
+	}
+
+	f, err := tea.LogToFile(path, "lttng-go")
+	if err != nil {
+		log.Fatalf("Could not open file %s: %v", path, err)
+		os.Exit(1)
+	}
+	defer f.Close()
+
 	/* Create the trace processing graph */
 	url := C.CString(os.Args[1])
 	defer C.free(unsafe.Pointer(url))
 	graph = C.create_graph(url, &relay_data)
 	defer C.bt_graph_put_ref(graph)
 	if graph == nil {
-		fmt.Fprintf(os.Stderr, "No graph can be created. Exiting...")
+		log.Fatalf("No graph can be created. Exiting...")
 		os.Exit(1)
 	}
 
