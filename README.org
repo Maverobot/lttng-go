@@ -1,0 +1,5 @@
+* lttng-go
+A command-line tool to show the LTTng live events in the console.
+- [ ] Work in plan [0/2]
+  - [ ] Get visual feedback during filtering for all text in title and description
+  - [ ] The focused item stays focused after exiting the filtering
