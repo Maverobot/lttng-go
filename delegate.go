@@ -7,11 +7,6 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/reflow/truncate"
-)
-
-const (
-	ellipsis = "…"
 )
 
 type lttngDelegate struct {
@@ -45,13 +40,6 @@ func (d lttngDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 		return
 	}
 
-	// Prevent text from exceeding list width
-	if m.Width() > 0 {
-		textwidth := uint(m.Width() - s.NormalTitle.GetPaddingLeft() - s.NormalTitle.GetPaddingRight())
-		title = truncate.StringWithTail(title, textwidth, ellipsis)
-		desc = truncate.StringWithTail(desc, textwidth, ellipsis)
-	}
-
 	// Conditions
 	var (
 		isSelected  = index == m.Index()
@@ -71,20 +59,32 @@ func (d lttngDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 	} else if isSelected && m.FilterState() != list.Filtering {
 		if isFiltered {
 			// Highlight matches
-			unmatched := s.SelectedTitle.Inline(true)
-			matched := unmatched.Copy().Inherit(s.FilterMatch)
-			title = lipgloss.StyleRunes(title, matchedRunesTitle, matched, unmatched)
-			desc = lipgloss.StyleRunes(desc, matchedRunesDescription, matched, unmatched)
+			{
+				unmatched := s.SelectedTitle.Inline(false).UnsetPadding().UnsetBorderStyle()
+				matched := unmatched.Copy().Inherit(s.FilterMatch)
+				title = lipgloss.StyleRunes(title, matchedRunesTitle, matched, unmatched)
+			}
+			{
+				unmatched := s.SelectedDesc.Inline(false).UnsetPadding().UnsetBorderStyle()
+				matched := unmatched.Copy().Inherit(s.FilterMatch)
+				desc = lipgloss.StyleRunes(desc, matchedRunesDescription, matched, unmatched)
+			}
 		}
 		title = s.SelectedTitle.Render(title)
 		desc = s.SelectedDesc.Render(desc)
 	} else {
 		if isFiltered {
 			// Highlight matches
-			unmatched := s.NormalTitle.Inline(true)
-			matched := unmatched.Copy().Inherit(s.FilterMatch)
-			title = lipgloss.StyleRunes(title, matchedRunesTitle, matched, unmatched)
-			desc = lipgloss.StyleRunes(desc, matchedRunesDescription, matched, unmatched)
+			{
+				unmatched := s.NormalTitle.Inline(false).UnsetPadding()
+				matched := unmatched.Copy().Inherit(s.FilterMatch)
+				title = lipgloss.StyleRunes(title, matchedRunesTitle, matched, unmatched)
+			}
+			{
+				unmatched := s.NormalDesc.Inline(false).UnsetPadding()
+				matched := unmatched.Copy().Inherit(s.FilterMatch)
+				desc = lipgloss.StyleRunes(desc, matchedRunesDescription, matched, unmatched)
+			}
 		}
 		title = s.NormalTitle.Render(title)
 		desc = s.NormalDesc.Render(desc)

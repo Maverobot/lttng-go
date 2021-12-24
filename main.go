@@ -10,6 +10,7 @@ import "C"
 import (
 	"log"
 	"os"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -17,6 +18,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/goccy/go-json"
+	"github.com/muesli/reflow/wordwrap"
 )
 
 var (
@@ -61,7 +63,7 @@ func main() {
 	const listHeight = 14
 	l := list.NewModel([]list.Item{}, newLttngDelegate(), defaultWidth, listHeight)
 	l.Title = "lttng-go"
-	l.SetShowStatusBar(false)
+	l.SetShowStatusBar(true)
 	l.SetFilteringEnabled(true)
 	l.SetShowPagination(true)
 	l.Styles.Title = titleStyle
@@ -107,6 +109,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.list.CursorDown()
 		case "ctrl+k":
 			m.list.CursorUp()
+		case "ctrl+h", "h":
+			if m.list.Paginator.Page > 0 {
+				m.list.Paginator.Page--
+			}
+		case "ctrl+l", "l":
+			if !m.list.Paginator.OnLastPage() {
+				m.list.Paginator.Page++
+			}
 		default:
 			if !m.list.SettingFilter() && (keypress == "q") {
 				return m, tea.Quit
@@ -134,7 +144,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				payload, _ := json.Marshal(data["payload"])
 				m.messages = append(m.messages, item{
 					title:       data["name"].(string),
-					description: string(payload),
+					description: wordwrap.String(strings.Replace(string(payload), ",", ", ", -1), m.width),
 				})
 			}
 		}
@@ -167,11 +177,4 @@ func tick() tea.Cmd {
 	return tea.Tick(time.Duration(time.Millisecond), func(t time.Time) tea.Msg {
 		return tickMsg(t)
 	})
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
