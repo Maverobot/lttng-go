@@ -8,7 +8,6 @@ package main
 import "C"
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -18,6 +17,7 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/goccy/go-json"
 )
 
 var (
