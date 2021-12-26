@@ -117,6 +117,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !m.list.Paginator.OnLastPage() {
 				m.list.Paginator.Page++
 			}
+		case "esc":
+			if m.list.FilterState() == list.Unfiltered {
+				// Does not let `list` process `esc` to avoid exiting the program with `esc`
+				return m, nil
+			}
 		default:
 			if !m.list.SettingFilter() && (keypress == "q") {
 				return m, tea.Quit
